@@ -1,0 +1,185 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Simple Blobman v102",
+    LoadingTitle = "Infinite Godspeed Protocol",
+    LoadingSubtitle = "by gh_ney",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
+local loopActive = false
+local RS = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LPlr = Players.LocalPlayer
+
+-- [[ 🧹 完全クリーンアップ（2周目以降を確実にする） ]]
+local function cleanupGarbage()
+    local char = LPlr.Character
+    if not char then return end
+    
+    -- キャラクターに付いてる古い固定具を全削除
+    for _, v in ipairs(char:GetDescendants()) do
+        if v.Name == "ManualSeatWeld" or v.Name == "FastLift" or v:IsA("BodyMover") then
+            v:Destroy()
+        end
+    end
+    
+    -- 座席状態を強制リセット
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.Sit = false end
+
+    -- 古いブロブマンをワークスペースから掃除（自分のが残ってたら消す）
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v.Name == "CreatureBlobman" and v:FindFirstChild("Creator") and v.Creator.Value == LPlr.Name then
+            -- v:Destroy() -- ゲームの仕様で消せない場合は無視
+        end
+    end
+end
+
+-- [[ 🚀 瞬間吸着・弾幕パケット ]]
+local function ultraDualGrab(blob, tRoot)
+    local grabScript = blob:FindFirstChild("BlobmanSeatAndOwnerScript")
+    local leftDet = blob:FindFirstChild("LeftDetector")
+    local rightDet = blob:FindFirstChild("RightDetector")
+    if not (grabScript and leftDet and rightDet) then return end
+    
+    for i = 1, 30 do 
+        pcall(function()
+            tRoot.CFrame = leftDet.CFrame -- Bring
+            grabScript.CreatureGrab:FireServer(leftDet, tRoot, leftDet:FindFirstChild("LeftWeld"))
+            grabScript.CreatureGrab:FireServer(rightDet, tRoot, rightDet:FindFirstChild("RightWeld"))
+        end)
+        if i % 6 == 0 then task.wait() end 
+    end
+end
+
+-- [[ 🌀 3連速攻リフト（高度：1人分） ]]
+local function doTripleHuntSequence(blob, lRoot)
+    local remoteOwner = RS:FindFirstChild("GrabEvents"):FindFirstChild("SetNetworkOwner")
+    local remoteDestroy = RS:FindFirstChild("GrabEvents"):FindFirstChild("DestroyGrabLine")
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LPlr and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local tRoot = p.Character.HumanoidRootPart
+            
+            for count = 1, 3 do
+                lRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 2)
+                ultraDualGrab(blob, tRoot)
+
+                if remoteOwner then
+                    local bp = Instance.new("BodyPosition", tRoot)
+                    bp.Name = "FastLift"
+                    bp.P = 250000
+                    bp.MaxForce = Vector3.new(0, 999999, 0)
+                    
+                    local targetPos = tRoot.Position + Vector3.new(0, 6, 0) -- 1人分
+                    bp.Position = targetPos
+                    
+                    for i = 1, 10 do
+                        remoteOwner:FireServer(tRoot, CFrame.new(targetPos))
+                    end
+                    task.wait(0.05)
+                    bp:Destroy() -- すぐ消して物理を戻す
+                end
+
+                if count < 3 then
+                    if remoteDestroy then remoteDestroy:FireServer(tRoot) end
+                    ultraDualGrab(blob, tRoot)
+                else
+                    task.wait(0.1)
+                    if remoteDestroy then remoteDestroy:FireServer(tRoot) end
+                end
+                task.wait(0.01)
+            end
+        end
+    end
+end
+
+-- [[ 🛠️ 無限対応・着席プロトコル ]]
+local function prepareBlobman()
+    cleanupGarbage() -- 最初に掃除
+    task.wait(0.1)
+
+    local lChar = LPlr.Character
+    local lRoot = lChar and lChar:FindFirstChild("HumanoidRootPart")
+    local lHum = lChar and lChar:FindFirstChildOfClass("Humanoid")
+    if not (lRoot and lHum) then return nil, nil end
+
+    local spawnRF = RS:FindFirstChild("MenuToys") and RS.MenuToys:FindFirstChild("SpawnToyRemoteFunction")
+    if spawnRF then
+        spawnRF:InvokeServer("CreatureBlobman", lRoot.CFrame * CFrame.new(0, 0, -4), Vector3.new(0, 0, 0))
+    end
+    
+    task.wait(0.4)
+    local blob = nil
+    for i = 1, 40 do 
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v.Name == "CreatureBlobman" then
+                local seat = v:FindFirstChild("VehicleSeat")
+                if seat and not seat:FindFirstChild("SeatWeld") then -- 誰も座ってない座席を探す
+                    blob = v
+                    seat.CFrame = lRoot.CFrame 
+                    seat:Sit(lHum)
+                    
+                    if lHum.Sit then
+                        local weld = Instance.new("Weld", seat)
+                        weld.Name = "ManualSeatWeld"
+                        weld.Part0 = seat
+                        weld.Part1 = lRoot
+                        weld.C0 = CFrame.new(0, 2, 0)
+                        break
+                    end
+                end
+            end
+        end
+        if lHum.Sit then break end
+        task.wait(0.05)
+    end
+    return blob, lRoot
+end
+
+-- UI
+local Tab = Window:CreateTab("Godspeed v102", 4483345998)
+
+Tab:CreateButton({
+    Name = "SINGLE HUNT (Infinite Fix)",
+    Callback = function()
+        task.spawn(function()
+            local blob, lRoot = prepareBlobman()
+            if blob and LPlr.Character.Humanoid.Sit then
+                doTripleHuntSequence(blob, lRoot)
+                cleanupGarbage() -- 終わったら掃除
+            end
+        end)
+    end
+})
+
+Tab:CreateToggle({
+    Name = "INFINITE LOOP",
+    CurrentValue = false,
+    Callback = function(Value)
+        loopActive = Value
+        if loopActive then
+            task.spawn(function()
+                while loopActive do
+                    local blob, lRoot = prepareBlobman()
+                    if blob and LPlr.Character.Humanoid.Sit then
+                        doTripleHuntSequence(blob, lRoot)
+                    end
+                    cleanupGarbage()
+                    task.wait(0.3) -- 次のサイクルへのインターバル
+                end
+            end)
+        end
+    end
+})
+
+Tab:CreateButton({
+    Name = "Force Stop & Reset",
+    Callback = function()
+        loopActive = false
+        cleanupGarbage()
+    end
+})
+
